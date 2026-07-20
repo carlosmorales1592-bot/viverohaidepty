@@ -1053,24 +1053,36 @@ let plantasCache = [];
 let textosCache = { ...TEXTOS_INICIALES };
 let categoriaActual = "todas";
 
-/* ---------- Escucha en tiempo real del catálogo (Firestore) ---------- */
-coleccionPlantas.onSnapshot((snapshot) => {
-  plantasCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  renderCatalogo();
-  if(panelAdmin && panelAdmin.classList.contains("activo")) renderListaAdmin();
-}, (error) => {
-  console.error("Error al leer el catálogo de Firestore:", error);
-  document.getElementById("sin-resultados").style.display = "block";
-  document.getElementById("sin-resultados").textContent = "No se pudo conectar a la base de datos. Revisa la configuración de Firebase.";
-});
+/* ---------- Funciones de lectura con get() (HTTP normal, no streaming) ----------
+   Usamos get() en lugar de onSnapshot() porque la red bloquea las conexiones
+   de streaming (WebChannel) que onSnapshot necesita. Con get() cada lectura
+   es una petición HTTP simple que sí pasa por cualquier red o proxy. */
 
-/* ---------- Escucha en tiempo real de los textos del sitio (Firestore) ---------- */
-docTextos.onSnapshot((doc) => {
-  textosCache = doc.exists ? { ...TEXTOS_INICIALES, ...doc.data() } : { ...TEXTOS_INICIALES };
-  aplicarTextos();
-}, (error) => {
-  console.error("Error al leer los textos de Firestore:", error);
-});
+function cargarCatalogo(){
+  coleccionPlantas.get().then((snapshot) => {
+    plantasCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderCatalogo();
+    if(panelAdmin && panelAdmin.classList.contains("activo")) renderListaAdmin();
+  }).catch((error) => {
+    console.error("Error al leer el catálogo de Firestore:", error);
+    const sinResultados = document.getElementById("sin-resultados");
+    sinResultados.style.display = "block";
+    sinResultados.textContent = "No se pudo conectar a la base de datos. Verifica tu conexión e intenta recargar la página.";
+  });
+}
+
+function cargarTextos(){
+  docTextos.get().then((doc) => {
+    textosCache = doc.exists ? { ...TEXTOS_INICIALES, ...doc.data() } : { ...TEXTOS_INICIALES };
+    aplicarTextos();
+  }).catch((error) => {
+    console.error("Error al leer los textos de Firestore:", error);
+  });
+}
+
+// Carga inicial
+cargarCatalogo();
+cargarTextos();
 
 /* Aplica los textos guardados al sitio público */
 function aplicarTextos(){
@@ -1128,6 +1140,7 @@ document.getElementById("btn-guardar-textos").addEventListener("click", () => {
 
   docTextos.set(nuevosTextos, { merge: true })
     .then(() => {
+      cargarTextos();
       const confirmacion = document.getElementById("confirmacion-textos");
       confirmacion.style.display = "block";
       setTimeout(() => { confirmacion.style.display = "none"; }, 2500);
@@ -1385,7 +1398,10 @@ document.getElementById("btn-agregar-planta").addEventListener("click", () => {
     if(imagenSeleccionada) datosActualizados.imagen = imagenSeleccionada;
 
     coleccionPlantas.doc(idPlantaEditando).update(datosActualizados)
-      .then(() => cancelarEdicionPlanta())
+      .then(() => {
+        cancelarEdicionPlanta();
+        cargarCatalogo();
+      })
       .catch((error) => {
         alert("No se pudo guardar el cambio. Revisa tu conexión o la configuración de Firebase.");
         console.error(error);
@@ -1400,7 +1416,10 @@ document.getElementById("btn-agregar-planta").addEventListener("click", () => {
       precio,
       imagen: imagenSeleccionada || "https://images.unsplash.com/photo-1463936575829-25148e1db1b8?q=80&w=800&auto=format&fit=crop"
     })
-      .then(() => cancelarEdicionPlanta())
+      .then(() => {
+        cancelarEdicionPlanta();
+        cargarCatalogo();
+      })
       .catch((error) => {
         alert("No se pudo agregar la planta. Revisa tu conexión o la configuración de Firebase.");
         console.error(error);
@@ -1491,10 +1510,12 @@ function cargarCatalogoInicial(){
     lote.set(nuevoDoc, planta);
   });
 
-  lote.commit().catch((error) => {
-    alert("No se pudo cargar el catálogo inicial. Revisa tu conexión o la configuración de Firebase.");
-    console.error(error);
-  });
+  lote.commit()
+    .then(() => cargarCatalogo())
+    .catch((error) => {
+      alert("No se pudo cargar el catálogo inicial. Revisa tu conexión o la configuración de Firebase.");
+      console.error(error);
+    });
 }
 
 function eliminarPlanta(id){
@@ -1502,6 +1523,7 @@ function eliminarPlanta(id){
   coleccionPlantas.doc(id).delete()
     .then(() => {
       if(idPlantaEditando === id) cancelarEdicionPlanta();
+      cargarCatalogo();
     })
     .catch((error) => {
       alert("No se pudo eliminar la planta. Revisa tu conexión o la configuración de Firebase.");
@@ -1533,8 +1555,7 @@ window.eliminarPlanta = eliminarPlanta;
 /* ---------- Inicialización ---------- */
 aplicarTextos();
 observarFadeUp();
-// El catálogo se renderiza automáticamente cuando llega la primera
-// respuesta de Firestore a través de onSnapshot (ver arriba).
+// cargarCatalogo() y cargarTextos() ya se llamaron arriba al definirlos.
 
 } // fin de iniciarApp()
 </script>
