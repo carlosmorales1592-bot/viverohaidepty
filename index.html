@@ -925,234 +925,249 @@ footer{
 
 <script>
 /* =========================================================
-   VIVERO HAIDE — script.js (embebido)
-   Catálogo y textos del sitio se guardan en Firebase Firestore
-   (base de datos en la nube, plan gratuito). Así los cambios
-   del administrador se ven en cualquier navegador o dispositivo.
-
-   El SDK de Firebase se carga de forma DINÁMICA, probando varios
-   proveedores (CDN) en orden, para evitar bloqueos de red o
-   problemas de bundling de algunos hostings (como Netlify).
+   VIVERO HAIDE — script.js
+   Usa la API REST de Firestore directamente con fetch().
+   Sin SDK de Firebase, sin WebChannel, sin streaming.
+   Funciona en cualquier red, proxy o firewall.
 ========================================================= */
 
-function cargarScript(url){
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = url;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("No se pudo descargar: " + url));
-    document.head.appendChild(script);
+/* ---------- CONFIGURACIÓN DE FIRESTORE (REST API) ---------- */
+const FS_API_KEY    = "AIzaSyATmIwB7Q5C-uihXyVB0dbKtGy0UT2gvOQ";
+const FS_PROJECT    = "viverohaide2026";
+const FS_BASE       = `https://firestore.googleapis.com/v1/projects/${FS_PROJECT}/databases/(default)/documents`;
+
+/* ---- Conversores entre objetos JS y formato de Firestore ---- */
+function aFirestore(valor) {
+  if (valor === null || valor === undefined) return { nullValue: null };
+  if (typeof valor === "boolean")  return { booleanValue: valor };
+  if (typeof valor === "number")   return Number.isInteger(valor) ? { integerValue: String(valor) } : { doubleValue: valor };
+  if (typeof valor === "string")   return { stringValue: valor };
+  if (Array.isArray(valor))        return { arrayValue: { values: valor.map(aFirestore) } };
+  if (typeof valor === "object")   return { mapValue: { fields: jsACampos(valor) } };
+  return { stringValue: String(valor) };
+}
+
+function deFirestore(fv) {
+  if ("stringValue"  in fv) return fv.stringValue;
+  if ("doubleValue"  in fv) return fv.doubleValue;
+  if ("integerValue" in fv) return Number(fv.integerValue);
+  if ("booleanValue" in fv) return fv.booleanValue;
+  if ("nullValue"    in fv) return null;
+  if ("arrayValue"   in fv) return (fv.arrayValue.values || []).map(deFirestore);
+  if ("mapValue"     in fv) return camposAJS(fv.mapValue.fields || {});
+  return null;
+}
+
+function jsACampos(obj) {
+  return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, aFirestore(v)]));
+}
+
+function camposAJS(campos) {
+  return Object.fromEntries(Object.entries(campos).map(([k, v]) => [k, deFirestore(v)]));
+}
+
+function docAJS(doc) {
+  return { id: doc.name.split("/").pop(), ...camposAJS(doc.fields || {}) };
+}
+
+/* ---- Funciones REST de Firestore ---- */
+async function fsListar(coleccion) {
+  const res = await fetch(`${FS_BASE}/${coleccion}?key=${FS_API_KEY}`);
+  if (!res.ok) throw new Error(`Firestore error ${res.status}`);
+  const data = await res.json();
+  return (data.documents || []).map(docAJS);
+}
+
+async function fsObtener(coleccion, docId) {
+  const res = await fetch(`${FS_BASE}/${coleccion}/${docId}?key=${FS_API_KEY}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Firestore error ${res.status}`);
+  return docAJS(await res.json());
+}
+
+async function fsAgregar(coleccion, datos) {
+  const res = await fetch(`${FS_BASE}/${coleccion}?key=${FS_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: jsACampos(datos) })
   });
+  if (!res.ok) throw new Error(`Firestore error ${res.status}: ${await res.text()}`);
+  return docAJS(await res.json());
 }
 
-function cargarScriptConRespaldo(urls){
-  return urls.reduce((promesaAnterior, url) => {
-    return promesaAnterior.catch(() => cargarScript(url));
-  }, Promise.reject());
+async function fsActualizar(coleccion, docId, datos) {
+  const mascara = Object.keys(datos).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+  const res = await fetch(`${FS_BASE}/${coleccion}/${docId}?key=${FS_API_KEY}&${mascara}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: jsACampos(datos) })
+  });
+  if (!res.ok) throw new Error(`Firestore error ${res.status}: ${await res.text()}`);
+  return docAJS(await res.json());
 }
 
-const PROVEEDORES_APP = [
-  "https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js",
-  "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.js",
-  "https://unpkg.com/firebase@10.12.0/firebase-app-compat.js"
-];
-const PROVEEDORES_FIRESTORE = [
-  "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js",
-  "https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-firestore-compat.js",
-  "https://unpkg.com/firebase@10.12.0/firebase-firestore-compat.js"
+async function fsEstablecer(coleccion, docId, datos) {
+  const res = await fetch(`${FS_BASE}/${coleccion}/${docId}?key=${FS_API_KEY}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: jsACampos(datos) })
+  });
+  if (!res.ok) throw new Error(`Firestore error ${res.status}: ${await res.text()}`);
+  return docAJS(await res.json());
+}
+
+async function fsEliminar(coleccion, docId) {
+  const res = await fetch(`${FS_BASE}/${coleccion}/${docId}?key=${FS_API_KEY}`, {
+    method: "DELETE"
+  });
+  if (!res.ok) throw new Error(`Firestore error ${res.status}`);
+}
+
+/* ---------- CREDENCIALES DEL PANEL ADMIN ---------- */
+const CLAVE_ADMIN   = "H4id3Mor4l3s!!";
+const CORREO_ADMIN  = "vivierohaidepty@gmail.com";
+
+/* ---------- Catálogo inicial de ejemplo ---------- */
+const PLANTAS_INICIALES = [
+  { nombre: "Zinnia",            categoria: "Floral",     descripcion: "Flores de colores vibrantes y floración abundante, ideales para macetas y jardines soleados.",             precio: 6.00, imagen: "https://loremflickr.com/800/600/zinnia,flower"        },
+  { nombre: "Clavel chino",      categoria: "Floral",     descripcion: "Planta de flores pequeñas y coloridas, perfecta para bordes de jardín y arreglos florales.",              precio: 5.50, imagen: "https://loremflickr.com/800/600/dianthus,flower"      },
+  { nombre: "Chavelitas",        categoria: "Floral",     descripcion: "Florecillas delicadas de tonos alegres, ideales para dar color a jardineras y patios.",                   precio: 4.50, imagen: "https://loremflickr.com/800/600/small,garden,flowers"  },
+  { nombre: "Cretona (Coleo)",   categoria: "Interior",   descripcion: "Planta de follaje multicolor, ideal para dar vida y contraste a espacios interiores con sombra.",        precio: 7.00, imagen: "https://loremflickr.com/800/600/coleus,plant"          },
+  { nombre: "Marygold (Maravilla)", categoria: "Floral",  descripcion: "Flores anaranjadas y amarillas de aroma característico, resistentes y de floración constante.",          precio: 5.00, imagen: "https://loremflickr.com/800/600/marigold,flower"       },
+  { nombre: "Claveles",          categoria: "Floral",     descripcion: "Flores clásicas de pétalos rizados y larga duración, perfectas para ramos y jardines.",                  precio: 6.50, imagen: "https://loremflickr.com/800/600/carnation,flower"      },
+  { nombre: "Girasol enano",     categoria: "Exterior",   descripcion: "Versión compacta del girasol clásico, ideal para macetas y espacios pequeños con mucho sol.",            precio: 7.50, imagen: "https://loremflickr.com/800/600/dwarf,sunflower"       },
+  { nombre: "Gazania",           categoria: "Floral",     descripcion: "Flores de colores intensos que se abren con el sol, resistentes a la sequía.",                           precio: 5.50, imagen: "https://loremflickr.com/800/600/gazania,flower"         },
+  { nombre: "Petunias",          categoria: "Floral",     descripcion: "Flores abundantes y coloridas, perfectas para colgantes, macetas y jardineras.",                         precio: 5.00, imagen: "https://loremflickr.com/800/600/petunia,flower"         },
+  { nombre: "Cactus Nopal de la Cochinilla (Opuntia cochenillifera)", categoria: "Suculentas", descripcion: "Cactus ornamental de pencas planas, resistente y de bajo mantenimiento.", precio: 9.00, imagen: "https://loremflickr.com/800/600/opuntia,cactus" }
 ];
 
-function mostrarErrorCarga(mensaje){
-  const intentar = () => {
-    const grid = document.getElementById("grid-plantas");
-    if(grid){
-      grid.innerHTML = `<p style="text-align:center; color:#b94545; grid-column:1/-1;">${mensaje}</p>`;
-    }
-  };
-  if(document.readyState === "loading"){
-    document.addEventListener("DOMContentLoaded", intentar);
-  } else {
-    intentar();
+/* ---------- Textos por defecto del sitio ---------- */
+const TEXTOS_INICIALES = {
+  heroEyebrow:        "Vivero · Ciudad de Panamá",
+  heroTitulo:         "Plantas que transforman cada rincón en un jardín tropical",
+  heroSubtitulo:      "Cultivamos y seleccionamos plantas florales y ornamentales para llevar naturaleza fresca a tu hogar, oficina o proyecto de paisajismo en Panamá.",
+  nosotrosEyebrow:    "Sobre nosotros",
+  nosotrosTitulo:     "Un vivero hecho con cariño en el corazón de Panamá",
+  nosotrosSubtitulo:  "Somos un equipo apasionado por las plantas. Transformamos tu hogar en un espacio que florece.",
+  contactoEyebrow:    "Contacto",
+  contactoTitulo:     "Hablemos de tu próximo jardín",
+  contactoSubtitulo:  "Escríbenos para cotizaciones a nuestro WhatsApp o correo electrónico.",
+  contactoUbicacion:  "Ciudad de Panamá, Panamá",
+  contactoTelefono:   "+507 6410-8121",
+  contactoCorreo:     "vivierohaidepty@gmail.com",
+  contactoEntregas:   "Los fines de semana"
+};
+
+/* ---------- Estado de la app ---------- */
+let plantasCache   = [];
+let textosCache    = { ...TEXTOS_INICIALES };
+let categoriaActual = "todas";
+
+/* ---------- Carga de datos desde Firestore REST ---------- */
+async function cargarCatalogo() {
+  try {
+    plantasCache = await fsListar("plantas");
+    renderCatalogo();
+    const panelAdm = document.getElementById("panel-admin");
+    if (panelAdm && panelAdm.classList.contains("activo")) renderListaAdmin();
+  } catch(err) {
+    console.error("Error al cargar catálogo:", err);
+    const sr = document.getElementById("sin-resultados");
+    if (sr) { sr.style.display = "block"; sr.textContent = "No se pudo cargar el catálogo. Verifica tu conexión e intenta recargar."; }
   }
 }
 
-cargarScriptConRespaldo(PROVEEDORES_APP)
-  .then(() => cargarScriptConRespaldo(PROVEEDORES_FIRESTORE))
-  .then(() => {
-    if(document.readyState === "loading"){
-      document.addEventListener("DOMContentLoaded", iniciarApp);
-    } else {
-      iniciarApp();
-    }
-  })
-  .catch((error) => {
-    console.error(error);
-    mostrarErrorCarga("No se pudo conectar con la base de datos (Firebase) usando ninguno de los proveedores disponibles. Probablemente tu red o navegador está bloqueando estos dominios. Intenta desde otra red (datos móviles) o desactiva temporalmente bloqueadores de anuncios/privacidad, y vuelve a cargar la página.");
-  });
-
-function iniciarApp(){
-
-/* ---------- CONFIGURACIÓN DE FIREBASE (proyecto: viverohaide2026) ---------- */
-const firebaseConfig = {
-  apiKey: "AIzaSyATmIwB7Q5C-uihXyVB0dbKtGy0UT2gvOQ",
-  authDomain: "viverohaide2026.firebaseapp.com",
-  projectId: "viverohaide2026",
-  storageBucket: "viverohaide2026.firebasestorage.app",
-  messagingSenderId: "20601582802",
-  appId: "1:20601582802:web:86d267b48e4fc55bb6e90b"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-// Forzamos "long polling" automático: evita el error
-// "WebChannelConnection ... transport errored" que ocurre en redes
-// con firewalls, proxies o antivirus que bloquean conexiones streaming.
-db.settings({
-  experimentalAutoDetectLongPolling: true,
-  useFetchStreams: false
-});
-const coleccionPlantas = db.collection("plantas");
-const docTextos = db.collection("config").doc("textos");
-
-const CLAVE_ADMIN = "H4id3Mor4l3s!!"; // contraseña de acceso al panel
-const CORREO_ADMIN = "vivierohaidepty@gmail.com"; // correo de acceso al panel
-
-/* ---------- Catálogo inicial de ejemplo (solo se usa al presionar "Cargar catálogo inicial") ---------- */
-const PLANTAS_INICIALES = [
-  { nombre: "Zinnia", categoria: "Floral", descripcion: "Flores de colores vibrantes y floración abundante, ideales para macetas y jardines soleados.", precio: 6.00, imagen: "https://loremflickr.com/800/600/zinnia,flower" },
-  { nombre: "Clavel chino", categoria: "Floral", descripcion: "Planta de flores pequeñas y coloridas, perfecta para bordes de jardín y arreglos florales.", precio: 5.50, imagen: "https://loremflickr.com/800/600/dianthus,flower" },
-  { nombre: "Chavelitas", categoria: "Floral", descripcion: "Florecillas delicadas de tonos alegres, ideales para dar color a jardineras y patios.", precio: 4.50, imagen: "https://loremflickr.com/800/600/small,garden,flowers" },
-  { nombre: "Cretona (Coleo)", categoria: "Interior", descripcion: "Planta de follaje multicolor, ideal para dar vida y contraste a espacios interiores y exteriores con sombra.", precio: 7.00, imagen: "https://loremflickr.com/800/600/coleus,plant" },
-  { nombre: "Marygold (Maravilla)", categoria: "Floral", descripcion: "Flores anaranjadas y amarillas de aroma característico, resistentes y de floración constante.", precio: 5.00, imagen: "https://loremflickr.com/800/600/marigold,flower" },
-  { nombre: "Claveles", categoria: "Floral", descripcion: "Flores clásicas de pétalos rizados y larga duración, perfectas para ramos y jardines.", precio: 6.50, imagen: "https://loremflickr.com/800/600/carnation,flower" },
-  { nombre: "Girasol enano", categoria: "Exterior", descripcion: "Versión compacta del girasol clásico, ideal para macetas y espacios pequeños con mucho sol.", precio: 7.50, imagen: "https://loremflickr.com/800/600/dwarf,sunflower" },
-  { nombre: "Gazania", categoria: "Floral", descripcion: "Flores de colores intensos que se abren con el sol, resistentes a la sequía.", precio: 5.50, imagen: "https://loremflickr.com/800/600/gazania,flower" },
-  { nombre: "Petunias", categoria: "Floral", descripcion: "Flores abundantes y coloridas, perfectas para colgantes, macetas y jardineras.", precio: 5.00, imagen: "https://loremflickr.com/800/600/petunia,flower" },
-  { nombre: "Cactus Nopal de la Cochinilla (Opuntia cochenillifera)", categoria: "Suculentas", descripcion: "Cactus ornamental de pencas planas, resistente y de bajo mantenimiento, ideal para jardines secos.", precio: 9.00, imagen: "https://loremflickr.com/800/600/opuntia,cactus" }
-];
-
-/* ---------- Textos editables del sitio (Inicio, Nosotros, Contacto) ---------- */
-const TEXTOS_INICIALES = {
-  heroEyebrow: "Vivero · Ciudad de Panamá",
-  heroTitulo: "Plantas que transforman cada rincón en un jardín tropical",
-  heroSubtitulo: "Cultivamos y seleccionamos plantas florales y ornamentales para llevar naturaleza fresca a tu hogar, oficina o proyecto de paisajismo en Panamá.",
-  nosotrosEyebrow: "Sobre nosotros",
-  nosotrosTitulo: "Un vivero hecho con cariño en el corazón de Panamá",
-  nosotrosSubtitulo: "Somos un equipo apasionado por las plantas. Transformamos tu hogar en un espacio que florece.",
-  contactoEyebrow: "Contacto",
-  contactoTitulo: "Hablemos de tu próximo jardín",
-  contactoSubtitulo: "Escríbenos para cotizaciones a nuestro WhatsApp o correo electrónico.",
-  contactoUbicacion: "Ciudad de Panamá, Panamá",
-  contactoTelefono: "+507 6410-8121",
-  contactoCorreo: "vivierohaidepty@gmail.com",
-  contactoEntregas: "Los fines de semana"
-};
-
-/* Caché local que se actualiza en tiempo real desde Firestore */
-let plantasCache = [];
-let textosCache = { ...TEXTOS_INICIALES };
-let categoriaActual = "todas";
-
-/* ---------- Funciones de lectura con get() (HTTP normal, no streaming) ----------
-   Usamos get() en lugar de onSnapshot() porque la red bloquea las conexiones
-   de streaming (WebChannel) que onSnapshot necesita. Con get() cada lectura
-   es una petición HTTP simple que sí pasa por cualquier red o proxy. */
-
-function cargarCatalogo(){
-  coleccionPlantas.get().then((snapshot) => {
-    plantasCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    renderCatalogo();
-    if(panelAdmin && panelAdmin.classList.contains("activo")) renderListaAdmin();
-  }).catch((error) => {
-    console.error("Error al leer el catálogo de Firestore:", error);
-    const sinResultados = document.getElementById("sin-resultados");
-    sinResultados.style.display = "block";
-    sinResultados.textContent = "No se pudo conectar a la base de datos. Verifica tu conexión e intenta recargar la página.";
-  });
-}
-
-function cargarTextos(){
-  docTextos.get().then((doc) => {
-    textosCache = doc.exists ? { ...TEXTOS_INICIALES, ...doc.data() } : { ...TEXTOS_INICIALES };
+async function cargarTextos() {
+  try {
+    const doc = await fsObtener("config", "textos");
+    textosCache = doc ? { ...TEXTOS_INICIALES, ...doc } : { ...TEXTOS_INICIALES };
+    delete textosCache.id; // quitar el id interno
     aplicarTextos();
-  }).catch((error) => {
-    console.error("Error al leer los textos de Firestore:", error);
-  });
+  } catch(err) {
+    console.error("Error al cargar textos:", err);
+    aplicarTextos(); // usa los valores por defecto
+  }
 }
 
-// Carga inicial
-cargarCatalogo();
-cargarTextos();
-
-/* Aplica los textos guardados al sitio público */
-function aplicarTextos(){
+/* ---------- Aplica textos al sitio público ---------- */
+function aplicarTextos() {
   const t = textosCache;
-  document.getElementById("texto-hero-eyebrow").textContent = t.heroEyebrow;
-  document.getElementById("texto-hero-titulo").textContent = t.heroTitulo;
-  document.getElementById("texto-hero-subtitulo").textContent = t.heroSubtitulo;
-  document.getElementById("texto-nosotros-eyebrow").textContent = t.nosotrosEyebrow;
-  document.getElementById("texto-nosotros-titulo").textContent = t.nosotrosTitulo;
-  document.getElementById("texto-nosotros-subtitulo").textContent = t.nosotrosSubtitulo;
-  document.getElementById("texto-contacto-eyebrow").textContent = t.contactoEyebrow;
-  document.getElementById("texto-contacto-titulo").textContent = t.contactoTitulo;
-  document.getElementById("texto-contacto-subtitulo").textContent = t.contactoSubtitulo;
-  document.getElementById("texto-contacto-ubicacion").textContent = t.contactoUbicacion;
-  document.getElementById("texto-contacto-telefono").textContent = t.contactoTelefono;
-  document.getElementById("texto-contacto-correo").textContent = t.contactoCorreo;
-  document.getElementById("texto-contacto-entregas").textContent = t.contactoEntregas;
+  const set = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+  set("texto-hero-eyebrow",       t.heroEyebrow);
+  set("texto-hero-titulo",        t.heroTitulo);
+  set("texto-hero-subtitulo",     t.heroSubtitulo);
+  set("texto-nosotros-eyebrow",   t.nosotrosEyebrow);
+  set("texto-nosotros-titulo",    t.nosotrosTitulo);
+  set("texto-nosotros-subtitulo", t.nosotrosSubtitulo);
+  set("texto-contacto-eyebrow",   t.contactoEyebrow);
+  set("texto-contacto-titulo",    t.contactoTitulo);
+  set("texto-contacto-subtitulo", t.contactoSubtitulo);
+  set("texto-contacto-ubicacion", t.contactoUbicacion);
+  set("texto-contacto-telefono",  t.contactoTelefono);
+  set("texto-contacto-correo",    t.contactoCorreo);
+  set("texto-contacto-entregas",  t.contactoEntregas);
 }
 
-/* Carga los textos guardados dentro de los campos del panel admin */
-function cargarTextosEnFormulario(){
+/* ---------- Carga textos en formulario del admin ---------- */
+function cargarTextosEnFormulario() {
   const t = textosCache;
-  document.getElementById("edit-hero-eyebrow").value = t.heroEyebrow;
-  document.getElementById("edit-hero-titulo").value = t.heroTitulo;
-  document.getElementById("edit-hero-subtitulo").value = t.heroSubtitulo;
-  document.getElementById("edit-nosotros-eyebrow").value = t.nosotrosEyebrow;
-  document.getElementById("edit-nosotros-titulo").value = t.nosotrosTitulo;
-  document.getElementById("edit-nosotros-subtitulo").value = t.nosotrosSubtitulo;
-  document.getElementById("edit-contacto-eyebrow").value = t.contactoEyebrow;
-  document.getElementById("edit-contacto-titulo").value = t.contactoTitulo;
-  document.getElementById("edit-contacto-subtitulo").value = t.contactoSubtitulo;
-  document.getElementById("edit-contacto-ubicacion").value = t.contactoUbicacion;
-  document.getElementById("edit-contacto-telefono").value = t.contactoTelefono;
-  document.getElementById("edit-contacto-correo").value = t.contactoCorreo;
-  document.getElementById("edit-contacto-entregas").value = t.contactoEntregas;
+  const set = (id, val) => { const el = document.getElementById(id); if(el) el.value = val || ""; };
+  set("edit-hero-eyebrow",        t.heroEyebrow);
+  set("edit-hero-titulo",         t.heroTitulo);
+  set("edit-hero-subtitulo",      t.heroSubtitulo);
+  set("edit-nosotros-eyebrow",    t.nosotrosEyebrow);
+  set("edit-nosotros-titulo",     t.nosotrosTitulo);
+  set("edit-nosotros-subtitulo",  t.nosotrosSubtitulo);
+  set("edit-contacto-eyebrow",    t.contactoEyebrow);
+  set("edit-contacto-titulo",     t.contactoTitulo);
+  set("edit-contacto-subtitulo",  t.contactoSubtitulo);
+  set("edit-contacto-ubicacion",  t.contactoUbicacion);
+  set("edit-contacto-telefono",   t.contactoTelefono);
+  set("edit-contacto-correo",     t.contactoCorreo);
+  set("edit-contacto-entregas",   t.contactoEntregas);
 }
 
-/* ---------- Guardar textos editados en Firestore ---------- */
-document.getElementById("btn-guardar-textos").addEventListener("click", () => {
+/* ---------- Guardar textos en Firestore ---------- */
+document.getElementById("btn-guardar-textos").addEventListener("click", async () => {
+  const get = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
   const nuevosTextos = {
-    heroEyebrow: document.getElementById("edit-hero-eyebrow").value.trim(),
-    heroTitulo: document.getElementById("edit-hero-titulo").value.trim(),
-    heroSubtitulo: document.getElementById("edit-hero-subtitulo").value.trim(),
-    nosotrosEyebrow: document.getElementById("edit-nosotros-eyebrow").value.trim(),
-    nosotrosTitulo: document.getElementById("edit-nosotros-titulo").value.trim(),
-    nosotrosSubtitulo: document.getElementById("edit-nosotros-subtitulo").value.trim(),
-    contactoEyebrow: document.getElementById("edit-contacto-eyebrow").value.trim(),
-    contactoTitulo: document.getElementById("edit-contacto-titulo").value.trim(),
-    contactoSubtitulo: document.getElementById("edit-contacto-subtitulo").value.trim(),
-    contactoUbicacion: document.getElementById("edit-contacto-ubicacion").value.trim(),
-    contactoTelefono: document.getElementById("edit-contacto-telefono").value.trim(),
-    contactoCorreo: document.getElementById("edit-contacto-correo").value.trim(),
-    contactoEntregas: document.getElementById("edit-contacto-entregas").value.trim()
+    heroEyebrow:       get("edit-hero-eyebrow"),
+    heroTitulo:        get("edit-hero-titulo"),
+    heroSubtitulo:     get("edit-hero-subtitulo"),
+    nosotrosEyebrow:   get("edit-nosotros-eyebrow"),
+    nosotrosTitulo:    get("edit-nosotros-titulo"),
+    nosotrosSubtitulo: get("edit-nosotros-subtitulo"),
+    contactoEyebrow:   get("edit-contacto-eyebrow"),
+    contactoTitulo:    get("edit-contacto-titulo"),
+    contactoSubtitulo: get("edit-contacto-subtitulo"),
+    contactoUbicacion: get("edit-contacto-ubicacion"),
+    contactoTelefono:  get("edit-contacto-telefono"),
+    contactoCorreo:    get("edit-contacto-correo"),
+    contactoEntregas:  get("edit-contacto-entregas")
   };
 
-  docTextos.set(nuevosTextos, { merge: true })
-    .then(() => {
-      cargarTextos();
-      const confirmacion = document.getElementById("confirmacion-textos");
-      confirmacion.style.display = "block";
-      setTimeout(() => { confirmacion.style.display = "none"; }, 2500);
-    })
-    .catch((error) => {
-      alert("No se pudieron guardar los textos. Revisa tu conexión o la configuración de Firebase.");
-      console.error(error);
-    });
+  const btn = document.getElementById("btn-guardar-textos");
+  btn.disabled = true;
+  btn.textContent = "Guardando...";
+
+  try {
+    await fsEstablecer("config", "textos", nuevosTextos);
+    textosCache = nuevosTextos;
+    aplicarTextos();
+    const conf = document.getElementById("confirmacion-textos");
+    conf.style.display = "block";
+    setTimeout(() => { conf.style.display = "none"; }, 2500);
+  } catch(err) {
+    alert("No se pudieron guardar los textos. Revisa tu conexión.");
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "💾 Guardar cambios";
+  }
 });
 
 /* ---------- Render del catálogo público ---------- */
-function renderCatalogo(){
+function renderCatalogo() {
   const grid = document.getElementById("grid-plantas");
   const sinResultados = document.getElementById("sin-resultados");
   grid.innerHTML = "";
@@ -1161,9 +1176,11 @@ function renderCatalogo(){
     ? plantasCache
     : plantasCache.filter(p => p.categoria === categoriaActual);
 
-  if(filtradas.length === 0){
+  if (filtradas.length === 0) {
     sinResultados.style.display = "block";
-    sinResultados.textContent = "No hay plantas en esta categoría todavía. Vuelve pronto 🌱";
+    sinResultados.textContent = plantasCache.length === 0
+      ? "Cargando catálogo... 🌱"
+      : "No hay plantas en esta categoría todavía.";
   } else {
     sinResultados.style.display = "none";
   }
@@ -1181,23 +1198,21 @@ function renderCatalogo(){
         <p class="desc">${planta.descripcion}</p>
         <div class="tarjeta-footer">
           <span class="precio">$${Number(planta.precio).toFixed(2)}</span>
-          <button class="btn-mini" onclick="consultarPlanta('${planta.nombre}')">Consultar</button>
+          <button class="btn-mini" onclick="consultarPlanta('${planta.nombre.replace(/'/g,"\\'")}')">Consultar</button>
         </div>
-      </div>
-    `;
+      </div>`;
     grid.appendChild(tarjeta);
   });
 
   observarFadeUp();
 }
 
-/* Botón "Consultar" envía directo a WhatsApp con el nombre de la planta */
-function consultarPlanta(nombre){
+function consultarPlanta(nombre) {
   const texto = encodeURIComponent(`Hola, me interesa la planta "${nombre}". ¿Podrían darme más información?`);
   window.open(`https://wa.me/50764108121?text=${texto}`, "_blank");
 }
 
-/* ---------- Filtros de catálogo ---------- */
+/* ---------- Filtros del catálogo ---------- */
 document.querySelectorAll(".filtro-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".filtro-btn").forEach(b => b.classList.remove("activo"));
@@ -1207,57 +1222,36 @@ document.querySelectorAll(".filtro-btn").forEach(btn => {
   });
 });
 
-/* ---------- Animación al hacer scroll ---------- */
-function observarFadeUp(){
-  const elementos = document.querySelectorAll(".fade-up:not(.visible)");
-  const observador = new IntersectionObserver((entradas) => {
-    entradas.forEach(entrada => {
-      if(entrada.isIntersecting){
-        entrada.target.classList.add("visible");
-        observador.unobserve(entrada.target);
-      }
-    });
+/* ---------- Animación fade-up al hacer scroll ---------- */
+function observarFadeUp() {
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add("visible"); obs.unobserve(e.target); } });
   }, { threshold: 0.15 });
-  elementos.forEach(el => observador.observe(el));
+  document.querySelectorAll(".fade-up:not(.visible)").forEach(el => obs.observe(el));
 }
 
 /* ---------- Menú móvil ---------- */
 document.getElementById("menu-toggle").addEventListener("click", () => {
   document.getElementById("nav-links").classList.toggle("activo");
 });
-document.querySelectorAll(".nav-links a").forEach(enlace => {
-  enlace.addEventListener("click", () => {
-    document.getElementById("nav-links").classList.remove("activo");
-  });
+document.querySelectorAll(".nav-links a").forEach(a => {
+  a.addEventListener("click", () => document.getElementById("nav-links").classList.remove("activo"));
 });
 
-/* ---------- Formulario de contacto (sin almacenamiento, solo envío externo) ---------- */
+/* ---------- Formulario de contacto ---------- */
 document.getElementById("btn-whatsapp").addEventListener("click", () => {
-  const nombre = document.getElementById("nombre").value.trim();
-  const correo = document.getElementById("correo").value.trim();
+  const nombre  = document.getElementById("nombre").value.trim();
+  const correo  = document.getElementById("correo").value.trim();
   const mensaje = document.getElementById("mensaje").value.trim();
-
-  if(!nombre || !correo || !mensaje){
-    alert("Por favor completa todos los campos antes de enviar.");
-    return;
-  }
-
-  const texto = encodeURIComponent(
-    `Hola, soy ${nombre} (${correo}).\n\n${mensaje}`
-  );
-  window.open(`https://wa.me/50764108121?text=${texto}`, "_blank");
+  if (!nombre || !correo || !mensaje) { alert("Por favor completa todos los campos antes de enviar."); return; }
+  window.open(`https://wa.me/50764108121?text=${encodeURIComponent(`Hola, soy ${nombre} (${correo}).\n\n${mensaje}`)}`, "_blank");
 });
 
 document.getElementById("btn-correo").addEventListener("click", () => {
-  const nombre = document.getElementById("nombre").value.trim();
-  const correo = document.getElementById("correo").value.trim();
+  const nombre  = document.getElementById("nombre").value.trim();
+  const correo  = document.getElementById("correo").value.trim();
   const mensaje = document.getElementById("mensaje").value.trim();
-
-  if(!nombre || !correo || !mensaje){
-    alert("Por favor completa todos los campos antes de enviar.");
-    return;
-  }
-
+  if (!nombre || !correo || !mensaje) { alert("Por favor completa todos los campos antes de enviar."); return; }
   const asunto = encodeURIComponent("Consulta desde el sitio web - Vivero Haide");
   const cuerpo = encodeURIComponent(`Nombre: ${nombre}\nCorreo: ${correo}\n\nMensaje:\n${mensaje}`);
   window.location.href = `mailto:vivierohaidepty@gmail.com?subject=${asunto}&body=${cuerpo}`;
@@ -1266,55 +1260,39 @@ document.getElementById("btn-correo").addEventListener("click", () => {
 /* =========================================================
    PANEL ADMINISTRADOR
 ========================================================= */
-const modalLogin = document.getElementById("modal-login");
-const panelAdmin = document.getElementById("panel-admin");
+const modalLogin  = document.getElementById("modal-login");
+const panelAdmin  = document.getElementById("panel-admin");
 const sitioPublico = document.getElementById("sitio-publico");
 
-/* ---------- Atajo de teclado secreto para abrir el panel admin ----------
-   Mantén presionadas las teclas C + Y + E al mismo tiempo.
-   No hay ningún botón visible — solo tú sabes este acceso.
-   Si quieres cambiarlo, edita el Set de abajo con las letras que prefieras. */
-const teclasSecretasRequeridas = new Set(["c", "y", "e"]);
+/* ---------- Atajo de teclado secreto C + Y + E ---------- */
+const teclasRequeridas = new Set(["c", "y", "e"]);
 const teclasPresionadas = new Set();
 
 document.addEventListener("keydown", (e) => {
-  // No activar el atajo si el usuario está escribiendo en un campo de texto
-  const etiqueta = e.target.tagName.toLowerCase();
-  if(etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
-
+  const tag = e.target.tagName.toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return;
   teclasPresionadas.add(e.key.toLowerCase());
-  const todasPresionadas = [...teclasSecretasRequeridas].every(t => teclasPresionadas.has(t));
-  if(todasPresionadas && !panelAdmin.classList.contains("activo")){
+  if ([...teclasRequeridas].every(t => teclasPresionadas.has(t)) && !panelAdmin.classList.contains("activo")) {
     teclasPresionadas.clear();
     modalLogin.classList.add("activo");
     document.getElementById("correo-admin").value = "";
     document.getElementById("clave-admin").value = "";
     document.getElementById("error-login").style.display = "none";
-    setTimeout(() => { document.getElementById("correo-admin").focus(); }, 100);
+    setTimeout(() => document.getElementById("correo-admin").focus(), 100);
   }
 });
+document.addEventListener("keyup", (e) => teclasPresionadas.delete(e.key.toLowerCase()));
 
-document.addEventListener("keyup", (e) => {
-  teclasPresionadas.delete(e.key.toLowerCase());
-});
-
-document.getElementById("cerrar-modal-login").addEventListener("click", () => {
-  modalLogin.classList.remove("activo");
-});
-
+/* ---------- Login ---------- */
+document.getElementById("cerrar-modal-login").addEventListener("click", () => modalLogin.classList.remove("activo"));
 document.getElementById("btn-confirmar-login").addEventListener("click", validarLogin);
-document.getElementById("clave-admin").addEventListener("keyup", (e) => {
-  if(e.key === "Enter") validarLogin();
-});
-document.getElementById("correo-admin").addEventListener("keyup", (e) => {
-  if(e.key === "Enter") document.getElementById("clave-admin").focus();
-});
+document.getElementById("clave-admin").addEventListener("keyup",   (e) => { if(e.key === "Enter") validarLogin(); });
+document.getElementById("correo-admin").addEventListener("keyup",  (e) => { if(e.key === "Enter") document.getElementById("clave-admin").focus(); });
 
-function validarLogin(){
+function validarLogin() {
   const correo = document.getElementById("correo-admin").value.trim().toLowerCase();
   const clave  = document.getElementById("clave-admin").value;
-
-  if(correo === CORREO_ADMIN.toLowerCase() && clave === CLAVE_ADMIN){
+  if (correo === CORREO_ADMIN.toLowerCase() && clave === CLAVE_ADMIN) {
     modalLogin.classList.remove("activo");
     abrirPanelAdmin();
   } else {
@@ -1324,119 +1302,95 @@ function validarLogin(){
   }
 }
 
-function abrirPanelAdmin(){
+function abrirPanelAdmin() {
   sitioPublico.style.display = "none";
   document.querySelector("footer").style.display = "none";
   document.querySelector(".whatsapp-flotante").style.display = "none";
   panelAdmin.classList.add("activo");
-  renderListaAdmin();
-  window.scrollTo(0,0);
+  cargarCatalogo();
+  window.scrollTo(0, 0);
 }
 
 document.getElementById("btn-volver-sitio").addEventListener("click", cerrarPanelAdmin);
 document.getElementById("btn-cerrar-sesion").addEventListener("click", cerrarPanelAdmin);
 
-function cerrarPanelAdmin(){
+function cerrarPanelAdmin() {
   sitioPublico.style.display = "block";
   document.querySelector("footer").style.display = "block";
   document.querySelector(".whatsapp-flotante").style.display = "flex";
   panelAdmin.classList.remove("activo");
   renderCatalogo();
-  window.scrollTo(0,0);
+  window.scrollTo(0, 0);
 }
 
-/* ---------- Vista previa + compresión de imagen subida ----------
-   Se reduce el tamaño de la imagen antes de guardarla en Firestore,
-   ya que cada documento tiene un límite de 1 MB en el plan gratuito. */
+/* ---------- Vista previa + compresión de imagen ---------- */
 let imagenSeleccionada = null;
 
 document.getElementById("admin-imagen").addEventListener("change", (e) => {
   const archivo = e.target.files[0];
-  if(!archivo) return;
-
+  if (!archivo) return;
   const lector = new FileReader();
-  lector.onload = (evento) => {
-    const imagenOriginal = new Image();
-    imagenOriginal.onload = () => {
-      const ANCHO_MAXIMO = 700;
-      const escala = Math.min(1, ANCHO_MAXIMO / imagenOriginal.width);
+  lector.onload = (ev) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 700;
+      const escala = Math.min(1, MAX / img.width);
       const canvas = document.createElement("canvas");
-      canvas.width = imagenOriginal.width * escala;
-      canvas.height = imagenOriginal.height * escala;
-      const contexto = canvas.getContext("2d");
-      contexto.drawImage(imagenOriginal, 0, 0, canvas.width, canvas.height);
-
+      canvas.width = img.width * escala;
+      canvas.height = img.height * escala;
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
       imagenSeleccionada = canvas.toDataURL("image/jpeg", 0.7);
-      document.getElementById("preview-imagen").innerHTML =
-        `<img src="${imagenSeleccionada}" alt="Vista previa">`;
+      document.getElementById("preview-imagen").innerHTML = `<img src="${imagenSeleccionada}" alt="Vista previa">`;
     };
-    imagenOriginal.src = evento.target.result;
+    img.src = ev.target.result;
   };
   lector.readAsDataURL(archivo);
 });
 
-/* ---------- Agregar o editar planta del catálogo (Firestore) ---------- */
+/* ---------- Agregar / Editar planta ---------- */
 let idPlantaEditando = null;
 
-document.getElementById("btn-agregar-planta").addEventListener("click", () => {
-  const nombre = document.getElementById("admin-nombre").value.trim();
-  const categoria = document.getElementById("admin-categoria").value;
+document.getElementById("btn-agregar-planta").addEventListener("click", async () => {
+  const nombre      = document.getElementById("admin-nombre").value.trim();
+  const categoria   = document.getElementById("admin-categoria").value;
   const descripcion = document.getElementById("admin-descripcion").value.trim();
-  const precio = parseFloat(document.getElementById("admin-precio").value);
+  const precio      = parseFloat(document.getElementById("admin-precio").value);
 
-  if(!nombre || !descripcion || isNaN(precio)){
-    alert("Por favor completa nombre, descripción y precio.");
-    return;
-  }
+  if (!nombre || !descripcion || isNaN(precio)) { alert("Por favor completa nombre, descripción y precio."); return; }
 
-  const botonGuardar = document.getElementById("btn-agregar-planta");
-  botonGuardar.disabled = true;
-  botonGuardar.textContent = "Guardando...";
+  const btn = document.getElementById("btn-agregar-planta");
+  btn.disabled = true;
+  btn.textContent = "Guardando...";
 
-  if(idPlantaEditando){
-    const datosActualizados = { nombre, categoria, descripcion, precio };
-    if(imagenSeleccionada) datosActualizados.imagen = imagenSeleccionada;
-
-    coleccionPlantas.doc(idPlantaEditando).update(datosActualizados)
-      .then(() => {
-        cancelarEdicionPlanta();
-        cargarCatalogo();
-      })
-      .catch((error) => {
-        alert("No se pudo guardar el cambio. Revisa tu conexión o la configuración de Firebase.");
-        console.error(error);
-        botonGuardar.disabled = false;
-        botonGuardar.textContent = "💾 Guardar cambios";
+  try {
+    if (idPlantaEditando) {
+      const datos = { nombre, categoria, descripcion, precio };
+      if (imagenSeleccionada) datos.imagen = imagenSeleccionada;
+      await fsActualizar("plantas", idPlantaEditando, datos);
+    } else {
+      await fsAgregar("plantas", {
+        nombre, categoria, descripcion, precio,
+        imagen: imagenSeleccionada || "https://images.unsplash.com/photo-1463936575829-25148e1db1b8?q=80&w=800&auto=format&fit=crop"
       });
-  } else {
-    coleccionPlantas.add({
-      nombre,
-      categoria,
-      descripcion,
-      precio,
-      imagen: imagenSeleccionada || "https://images.unsplash.com/photo-1463936575829-25148e1db1b8?q=80&w=800&auto=format&fit=crop"
-    })
-      .then(() => {
-        cancelarEdicionPlanta();
-        cargarCatalogo();
-      })
-      .catch((error) => {
-        alert("No se pudo agregar la planta. Revisa tu conexión o la configuración de Firebase.");
-        console.error(error);
-        botonGuardar.disabled = false;
-        botonGuardar.textContent = "+ Agregar al catálogo";
-      });
+    }
+    await cargarCatalogo();
+    cancelarEdicionPlanta();
+  } catch(err) {
+    alert("No se pudo guardar la planta. Revisa tu conexión.");
+    console.error(err);
+    btn.disabled = false;
+    btn.textContent = idPlantaEditando ? "💾 Guardar cambios" : "+ Agregar al catálogo";
   }
 });
 
 document.getElementById("btn-cancelar-edicion").addEventListener("click", cancelarEdicionPlanta);
 
-function cancelarEdicionPlanta(){
+function cancelarEdicionPlanta() {
   idPlantaEditando = null;
   document.getElementById("titulo-formulario-planta").textContent = "Agregar nueva planta";
-  const botonGuardar = document.getElementById("btn-agregar-planta");
-  botonGuardar.disabled = false;
-  botonGuardar.textContent = "+ Agregar al catálogo";
+  const btn = document.getElementById("btn-agregar-planta");
+  btn.disabled = false;
+  btn.textContent = "+ Agregar al catálogo";
   document.getElementById("btn-cancelar-edicion").style.display = "none";
   document.getElementById("admin-nombre").value = "";
   document.getElementById("admin-descripcion").value = "";
@@ -1447,36 +1401,31 @@ function cancelarEdicionPlanta(){
   imagenSeleccionada = null;
 }
 
-/* Carga los datos de una planta existente en el formulario para editarla */
-function editarPlanta(id){
+function editarPlanta(id) {
   const planta = plantasCache.find(p => p.id === id);
-  if(!planta) return;
-
+  if (!planta) return;
   idPlantaEditando = id;
   document.getElementById("titulo-formulario-planta").textContent = "Editar planta";
   document.getElementById("btn-agregar-planta").textContent = "💾 Guardar cambios";
   document.getElementById("btn-cancelar-edicion").style.display = "block";
-
   document.getElementById("admin-nombre").value = planta.nombre;
   document.getElementById("admin-categoria").value = planta.categoria;
   document.getElementById("admin-descripcion").value = planta.descripcion;
   document.getElementById("admin-precio").value = planta.precio;
   document.getElementById("preview-imagen").innerHTML = `<img src="${planta.imagen}" alt="${planta.nombre}">`;
   imagenSeleccionada = null;
-
   document.querySelector(".panel-formulario").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-/* ---------- Lista de plantas en el panel admin ---------- */
-function renderListaAdmin(){
+/* ---------- Lista de plantas en panel admin ---------- */
+function renderListaAdmin() {
   const lista = document.getElementById("lista-admin");
   lista.innerHTML = "";
 
-  if(plantasCache.length === 0){
+  if (plantasCache.length === 0) {
     lista.innerHTML = `
       <p style="color:var(--texto-suave); margin-bottom:14px;">Aún no hay plantas en el catálogo.</p>
-      <button class="btn btn-secundario" id="btn-cargar-iniciales">🌱 Cargar catálogo inicial de ejemplo</button>
-    `;
+      <button class="btn btn-secundario" id="btn-cargar-iniciales">🌱 Cargar catálogo inicial de ejemplo</button>`;
     document.getElementById("btn-cargar-iniciales").addEventListener("click", cargarCatalogoInicial);
     return;
   }
@@ -1492,43 +1441,37 @@ function renderListaAdmin(){
       </div>
       <span class="precio-admin">$${Number(planta.precio).toFixed(2)}</span>
       <button class="btn-mini" onclick="editarPlanta('${planta.id}')" style="margin-right:8px;">Editar</button>
-      <button class="btn-eliminar" onclick="eliminarPlanta('${planta.id}')">Eliminar</button>
-    `;
+      <button class="btn-eliminar" onclick="eliminarPlanta('${planta.id}')">Eliminar</button>`;
     lista.appendChild(fila);
   });
 }
 
-/* Carga las 10 plantas de ejemplo en Firestore (solo si el catálogo está vacío) */
-function cargarCatalogoInicial(){
-  const boton = document.getElementById("btn-cargar-iniciales");
-  boton.disabled = true;
-  boton.textContent = "Cargando...";
-
-  const lote = db.batch();
-  PLANTAS_INICIALES.forEach(planta => {
-    const nuevoDoc = coleccionPlantas.doc();
-    lote.set(nuevoDoc, planta);
-  });
-
-  lote.commit()
-    .then(() => cargarCatalogo())
-    .catch((error) => {
-      alert("No se pudo cargar el catálogo inicial. Revisa tu conexión o la configuración de Firebase.");
-      console.error(error);
-    });
+/* Carga las plantas iniciales de ejemplo */
+async function cargarCatalogoInicial() {
+  const btn = document.getElementById("btn-cargar-iniciales");
+  btn.disabled = true;
+  btn.textContent = "Cargando...";
+  try {
+    await Promise.all(PLANTAS_INICIALES.map(p => fsAgregar("plantas", p)));
+    await cargarCatalogo();
+  } catch(err) {
+    alert("No se pudo cargar el catálogo inicial. Revisa tu conexión.");
+    console.error(err);
+    btn.disabled = false;
+    btn.textContent = "🌱 Cargar catálogo inicial de ejemplo";
+  }
 }
 
-function eliminarPlanta(id){
-  if(!confirm("¿Eliminar esta planta del catálogo?")) return;
-  coleccionPlantas.doc(id).delete()
-    .then(() => {
-      if(idPlantaEditando === id) cancelarEdicionPlanta();
-      cargarCatalogo();
-    })
-    .catch((error) => {
-      alert("No se pudo eliminar la planta. Revisa tu conexión o la configuración de Firebase.");
-      console.error(error);
-    });
+async function eliminarPlanta(id) {
+  if (!confirm("¿Eliminar esta planta del catálogo?")) return;
+  try {
+    await fsEliminar("plantas", id);
+    if (idPlantaEditando === id) cancelarEdicionPlanta();
+    await cargarCatalogo();
+  } catch(err) {
+    alert("No se pudo eliminar la planta. Revisa tu conexión.");
+    console.error(err);
+  }
 }
 
 /* ---------- Pestañas del panel admin ---------- */
@@ -1547,17 +1490,16 @@ document.getElementById("tab-textos").addEventListener("click", () => {
   cargarTextosEnFormulario();
 });
 
-/* ---------- Exponer funciones usadas en onclick="" (HTML generado dinámicamente) ---------- */
+/* ---------- Exponer funciones llamadas desde onclick en HTML dinámico ---------- */
 window.consultarPlanta = consultarPlanta;
-window.editarPlanta = editarPlanta;
-window.eliminarPlanta = eliminarPlanta;
+window.editarPlanta    = editarPlanta;
+window.eliminarPlanta  = eliminarPlanta;
 
 /* ---------- Inicialización ---------- */
 aplicarTextos();
 observarFadeUp();
-// cargarCatalogo() y cargarTextos() ya se llamaron arriba al definirlos.
-
-} // fin de iniciarApp()
+cargarCatalogo();
+cargarTextos();
 </script>
 </body>
 </html>
