@@ -883,10 +883,14 @@ footer{
     <button class="modal-cerrar" id="cerrar-modal-login">✕</button>
     <h3>Acceso administrador</h3>
     <div class="campo">
-      <label for="clave-admin">Contraseña</label>
-      <input type="password" id="clave-admin" placeholder="Ingresa la contraseña">
+      <label for="correo-admin">Correo electrónico</label>
+      <input type="email" id="correo-admin" placeholder="tucorreo@ejemplo.com" autocomplete="email">
     </div>
-    <p id="error-login" style="color:#b94545; font-size:.85rem; display:none;">Contraseña incorrecta. Intenta de nuevo.</p>
+    <div class="campo">
+      <label for="clave-admin">Contraseña</label>
+      <input type="password" id="clave-admin" placeholder="Ingresa tu contraseña" autocomplete="current-password">
+    </div>
+    <p id="error-login" style="color:#b94545; font-size:.85rem; display:none;">Correo o contraseña incorrectos. Intenta de nuevo.</p>
     <button class="btn btn-primario" id="btn-confirmar-login" style="width:100%; justify-content:center; margin-top:10px;">Ingresar</button>
   </div>
 </div>
@@ -1011,6 +1015,7 @@ const coleccionPlantas = db.collection("plantas");
 const docTextos = db.collection("config").doc("textos");
 
 const CLAVE_ADMIN = "vivero2026"; // contraseña básica del panel (solo front-end)
+const CORREO_ADMIN = "vivierohaidepty@gmail.com"; // correo de acceso al panel
 
 /* ---------- Catálogo inicial de ejemplo (solo se usa al presionar "Cargar catálogo inicial") ---------- */
 const PLANTAS_INICIALES = [
@@ -1253,21 +1258,26 @@ const panelAdmin = document.getElementById("panel-admin");
 const sitioPublico = document.getElementById("sitio-publico");
 
 /* ---------- Atajo de teclado secreto para abrir el panel admin ----------
-   Mantén presionadas las teclas A + D + M al mismo tiempo.
+   Mantén presionadas las teclas C + Y + E al mismo tiempo.
    No hay ningún botón visible — solo tú sabes este acceso.
    Si quieres cambiarlo, edita el Set de abajo con las letras que prefieras. */
-const teclasSecretasRequeridas = new Set(["a", "d", "m"]);
+const teclasSecretasRequeridas = new Set(["c", "y", "e"]);
 const teclasPresionadas = new Set();
 
 document.addEventListener("keydown", (e) => {
+  // No activar el atajo si el usuario está escribiendo en un campo de texto
+  const etiqueta = e.target.tagName.toLowerCase();
+  if(etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
+
   teclasPresionadas.add(e.key.toLowerCase());
   const todasPresionadas = [...teclasSecretasRequeridas].every(t => teclasPresionadas.has(t));
   if(todasPresionadas && !panelAdmin.classList.contains("activo")){
     teclasPresionadas.clear();
     modalLogin.classList.add("activo");
+    document.getElementById("correo-admin").value = "";
     document.getElementById("clave-admin").value = "";
     document.getElementById("error-login").style.display = "none";
-    setTimeout(() => { document.getElementById("clave-admin").focus(); }, 100);
+    setTimeout(() => { document.getElementById("correo-admin").focus(); }, 100);
   }
 });
 
@@ -1283,14 +1293,21 @@ document.getElementById("btn-confirmar-login").addEventListener("click", validar
 document.getElementById("clave-admin").addEventListener("keyup", (e) => {
   if(e.key === "Enter") validarLogin();
 });
+document.getElementById("correo-admin").addEventListener("keyup", (e) => {
+  if(e.key === "Enter") document.getElementById("clave-admin").focus();
+});
 
 function validarLogin(){
-  const clave = document.getElementById("clave-admin").value;
-  if(clave === CLAVE_ADMIN){
+  const correo = document.getElementById("correo-admin").value.trim().toLowerCase();
+  const clave  = document.getElementById("clave-admin").value;
+
+  if(correo === CORREO_ADMIN.toLowerCase() && clave === CLAVE_ADMIN){
     modalLogin.classList.remove("activo");
     abrirPanelAdmin();
   } else {
     document.getElementById("error-login").style.display = "block";
+    document.getElementById("clave-admin").value = "";
+    document.getElementById("clave-admin").focus();
   }
 }
 
