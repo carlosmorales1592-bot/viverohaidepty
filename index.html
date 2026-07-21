@@ -602,9 +602,33 @@ footer{
   .footer-grid{ grid-template-columns:1fr; }
   section{ padding:64px 0; }
 }
+/* ---------- Modo edición de planta ---------- */
+.btn-editar{
+  background:var(--tierra);
+  color:#fff;
+  border:none;
+  border-radius:8px;
+  padding:8px 14px;
+  font-size:.8rem;
+  font-weight:600;
+  cursor:pointer;
+  margin-right:8px;
+}
+.btn-editar:hover{ background:var(--tierra-oscura); }
+.aviso-conexion{
+  text-align:center;
+  padding:10px;
+  font-size:.85rem;
+  color:var(--texto-suave);
+}
 </style>
 </head>
 <body>
+
+<!-- ===================== FIREBASE SDK ===================== -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
 <!-- ===================== NAVBAR ===================== -->
 <header class="navbar">
@@ -699,19 +723,19 @@ footer{
 
         <div class="info-item">
           <div class="icono">📍</div>
-          <div><strong>Ubicación</strong><span>Ciudad de Panamá, Panamá</span></div>
+          <div><strong>Ubicación</strong><span id="texto-contacto-ubicacion">Ciudad de Panamá, Panamá</span></div>
         </div>
         <div class="info-item">
           <div class="icono">📞</div>
-          <div><strong>Teléfono / WhatsApp</strong><span>+507 6410-8121</span></div>
+          <div><strong>Teléfono / WhatsApp</strong><span id="texto-contacto-telefono">+507 6410-8121</span></div>
         </div>
         <div class="info-item">
           <div class="icono">✉️</div>
-          <div><strong>Correo electrónico</strong><span>vivierohaidepty@gmail.com</span></div>
+          <div><strong>Correo electrónico</strong><span id="texto-contacto-correo">vivierohaidepty@gmail.com</span></div>
         </div>
         <div class="info-item">
           <div class="icono">🕒</div>
-          <div><strong>Entregas</strong><span>Los fines de semana</span></div>
+          <div><strong>Entregas</strong><span id="texto-contacto-horario">Los fines de semana</span></div>
         </div>
       </div>
 
@@ -755,6 +779,7 @@ footer{
     <div class="filtros" style="justify-content:flex-start; margin-bottom:32px;">
       <button class="filtro-btn activo" id="tab-plantas">🌱 Plantas</button>
       <button class="filtro-btn" id="tab-textos">✏️ Textos del sitio</button>
+      <button class="filtro-btn" id="tab-contacto">📞 Contacto</button>
     </div>
 
     <!-- ===== VISTA: PLANTAS ===== -->
@@ -762,11 +787,16 @@ footer{
       <div class="admin-grid">
         <!-- formulario para agregar planta -->
         <div class="panel-formulario">
-          <h3>Agregar nueva planta</h3>
+          <h3 id="titulo-form-planta">Agregar nueva planta</h3>
+          <input type="hidden" id="admin-planta-id" value="">
           <div class="preview-imagen" id="preview-imagen">Vista previa de la imagen</div>
           <div class="campo">
-            <label for="admin-imagen">Imagen de la planta</label>
+            <label for="admin-imagen">Imagen de la planta (subir archivo)</label>
             <input type="file" id="admin-imagen" accept="image/*">
+          </div>
+          <div class="campo">
+            <label for="admin-imagen-url">o pega la URL de una imagen</label>
+            <input type="text" id="admin-imagen-url" placeholder="https://...">
           </div>
           <div class="campo">
             <label for="admin-nombre">Nombre</label>
@@ -789,7 +819,11 @@ footer{
             <label for="admin-precio">Precio (USD)</label>
             <input type="number" id="admin-precio" placeholder="Ej. 15.00" min="0" step="0.01">
           </div>
-          <button class="btn btn-primario" id="btn-agregar-planta" style="width:100%; justify-content:center;">+ Agregar al catálogo</button>
+          <div style="display:flex; gap:10px;">
+            <button class="btn btn-primario" id="btn-agregar-planta" style="width:100%; justify-content:center;">+ Agregar al catálogo</button>
+            <button class="btn btn-secundario" id="btn-cancelar-edicion" style="display:none; width:100%; justify-content:center;">Cancelar</button>
+          </div>
+          <p id="subiendo-imagen" style="display:none; color:var(--texto-suave); font-size:.85rem; margin-top:10px;">Subiendo imagen...</p>
         </div>
 
         <!-- lista de plantas agregadas -->
@@ -861,19 +895,55 @@ footer{
       </div>
     </div>
 
+    <!-- ===== VISTA: CONTACTO ===== -->
+    <div id="vista-contacto" style="display:none;">
+      <div class="admin-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="panel-formulario">
+          <h3>📞 Datos de contacto</h3>
+          <div class="campo">
+            <label for="edit-contacto-ubicacion">Ubicación</label>
+            <input type="text" id="edit-contacto-ubicacion">
+          </div>
+          <div class="campo">
+            <label for="edit-contacto-telefono">Teléfono / WhatsApp (texto mostrado)</label>
+            <input type="text" id="edit-contacto-telefono">
+          </div>
+          <div class="campo">
+            <label for="edit-contacto-whatsapp">Número de WhatsApp (solo dígitos, con código de país, ej. 50764108121)</label>
+            <input type="text" id="edit-contacto-whatsapp">
+          </div>
+          <div class="campo">
+            <label for="edit-contacto-email">Correo electrónico</label>
+            <input type="email" id="edit-contacto-email">
+          </div>
+          <div class="campo">
+            <label for="edit-contacto-horario">Horario de entregas</label>
+            <input type="text" id="edit-contacto-horario">
+          </div>
+        </div>
+        <div class="panel-formulario" style="display:flex; flex-direction:column; justify-content:center; align-items:center;">
+          <p style="color:var(--texto-suave); text-align:center; margin-bottom:20px;">Estos datos actualizan la sección de Contacto, el botón flotante de WhatsApp y los enlaces de WhatsApp/correo del sitio.</p>
+          <button class="btn btn-primario" id="btn-guardar-contacto" style="width:100%; justify-content:center;">💾 Guardar cambios</button>
+          <p id="confirmacion-contacto" style="color:var(--verde-bosque); font-weight:600; font-size:.85rem; margin-top:14px; display:none;">✓ Contacto actualizado correctamente</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
-
-<!-- ===================== MODAL LOGIN ADMIN ===================== -->
 <div class="modal-fondo" id="modal-login">
   <div class="modal-caja">
     <button class="modal-cerrar" id="cerrar-modal-login">✕</button>
     <h3>Acceso administrador</h3>
     <div class="campo">
+      <label for="correo-admin">Correo</label>
+      <input type="email" id="correo-admin" placeholder="admin@tucorreo.com">
+    </div>
+    <div class="campo">
       <label for="clave-admin">Contraseña</label>
       <input type="password" id="clave-admin" placeholder="Ingresa la contraseña">
     </div>
-    <p id="error-login" style="color:#b94545; font-size:.85rem; display:none;">Contraseña incorrecta. Intenta de nuevo.</p>
+    <p id="error-login" style="color:#b94545; font-size:.85rem; display:none;">Correo o contraseña incorrectos. Intenta de nuevo.</p>
     <button class="btn btn-primario" id="btn-confirmar-login" style="width:100%; justify-content:center; margin-top:10px;">Ingresar</button>
   </div>
 </div>
@@ -908,100 +978,44 @@ footer{
 
 <script>
 /* =========================================================
-   RAÍCES PANAMÁ — script.js (embebido)
-   Sitio 100% front-end. Sin backend, sin base de datos.
-   Catálogo y panel admin usan LocalStorage del navegador.
+   VIVERO HAIDE — script.js (embebido)
+   Catálogo, textos y contacto se guardan en Firebase
+   (Firestore + Storage) y se sincronizan en tiempo real
+   con todos los visitantes del sitio.
 ========================================================= */
 
-/* ---------- Datos iniciales del catálogo (si no hay nada en LocalStorage) ---------- */
+/* ---------- Configuración de Firebase ---------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyATmIwB7Q5C-uihXyVB0dbKtGy0UT2gvOQ",
+  authDomain: "viverohaide2026.firebaseapp.com",
+  databaseURL: "https://viverohaide2026-default-rtdb.firebaseio.com",
+  projectId: "viverohaide2026",
+  storageBucket: "viverohaide2026.firebasestorage.app",
+  messagingSenderId: "20601582802",
+  appId: "1:20601582802:web:49abae15e4baf873b6e90b"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const REF_PLANTAS = db.ref("plantas");
+const REF_TEXTOS = db.ref("config/textos");
+const REF_CONTACTO = db.ref("config/contacto");
+
+/* ---------- Datos iniciales (se usan solo la primera vez, para poblar Firestore) ---------- */
 const PLANTAS_INICIALES = [
-  {
-    id: "p1",
-    nombre: "Zinnia",
-    categoria: "Floral",
-    descripcion: "Flores de colores vibrantes y floración abundante, ideales para macetas y jardines soleados.",
-    precio: 6.00,
-    imagen: "https://loremflickr.com/800/600/zinnia,flower"
-  },
-  {
-    id: "p2",
-    nombre: "Clavel chino",
-    categoria: "Floral",
-    descripcion: "Planta de flores pequeñas y coloridas, perfecta para bordes de jardín y arreglos florales.",
-    precio: 5.50,
-    imagen: "https://loremflickr.com/800/600/dianthus,flower"
-  },
-  {
-    id: "p3",
-    nombre: "Chavelitas",
-    categoria: "Floral",
-    descripcion: "Florecillas delicadas de tonos alegres, ideales para dar color a jardineras y patios.",
-    precio: 4.50,
-    imagen: "https://loremflickr.com/800/600/small,garden,flowers"
-  },
-  {
-    id: "p4",
-    nombre: "Cretona (Coleo)",
-    categoria: "Interior",
-    descripcion: "Planta de follaje multicolor, ideal para dar vida y contraste a espacios interiores y exteriores con sombra.",
-    precio: 7.00,
-    imagen: "https://loremflickr.com/800/600/coleus,plant"
-  },
-  {
-    id: "p5",
-    nombre: "Marygold (Maravilla)",
-    categoria: "Floral",
-    descripcion: "Flores anaranjadas y amarillas de aroma característico, resistentes y de floración constante.",
-    precio: 5.00,
-    imagen: "https://loremflickr.com/800/600/marigold,flower"
-  },
-  {
-    id: "p6",
-    nombre: "Claveles",
-    categoria: "Floral",
-    descripcion: "Flores clásicas de pétalos rizados y larga duración, perfectas para ramos y jardines.",
-    precio: 6.50,
-    imagen: "https://loremflickr.com/800/600/carnation,flower"
-  },
-  {
-    id: "p7",
-    nombre: "Girasol enano",
-    categoria: "Exterior",
-    descripcion: "Versión compacta del girasol clásico, ideal para macetas y espacios pequeños con mucho sol.",
-    precio: 7.50,
-    imagen: "https://loremflickr.com/800/600/dwarf,sunflower"
-  },
-  {
-    id: "p8",
-    nombre: "Gazania",
-    categoria: "Floral",
-    descripcion: "Flores de colores intensos que se abren con el sol, resistentes a la sequía.",
-    precio: 5.50,
-    imagen: "https://loremflickr.com/800/600/gazania,flower"
-  },
-  {
-    id: "p9",
-    nombre: "Petunias",
-    categoria: "Floral",
-    descripcion: "Flores abundantes y coloridas, perfectas para colgantes, macetas y jardineras.",
-    precio: 5.00,
-    imagen: "https://loremflickr.com/800/600/petunia,flower"
-  },
-  {
-    id: "p10",
-    nombre: "Cactus Nopal de la Cochinilla (Opuntia cochenillifera)",
-    categoria: "Suculentas",
-    descripcion: "Cactus ornamental de pencas planas, resistente y de bajo mantenimiento, ideal para jardines secos.",
-    precio: 9.00,
-    imagen: "https://loremflickr.com/800/600/opuntia,cactus"
-  }
+  { nombre: "Zinnia", categoria: "Floral", descripcion: "Flores de colores vibrantes y floración abundante, ideales para macetas y jardines soleados.", precio: 6.00, imagen: "https://loremflickr.com/800/600/zinnia,flower" },
+  { nombre: "Clavel chino", categoria: "Floral", descripcion: "Planta de flores pequeñas y coloridas, perfecta para bordes de jardín y arreglos florales.", precio: 5.50, imagen: "https://loremflickr.com/800/600/dianthus,flower" },
+  { nombre: "Chavelitas", categoria: "Floral", descripcion: "Florecillas delicadas de tonos alegres, ideales para dar color a jardineras y patios.", precio: 4.50, imagen: "https://loremflickr.com/800/600/small,garden,flowers" },
+  { nombre: "Cretona (Coleo)", categoria: "Interior", descripcion: "Planta de follaje multicolor, ideal para dar vida y contraste a espacios interiores y exteriores con sombra.", precio: 7.00, imagen: "https://loremflickr.com/800/600/coleus,plant" },
+  { nombre: "Marygold (Maravilla)", categoria: "Floral", descripcion: "Flores anaranjadas y amarillas de aroma característico, resistentes y de floración constante.", precio: 5.00, imagen: "https://loremflickr.com/800/600/marigold,flower" },
+  { nombre: "Claveles", categoria: "Floral", descripcion: "Flores clásicas de pétalos rizados y larga duración, perfectas para ramos y jardines.", precio: 6.50, imagen: "https://loremflickr.com/800/600/carnation,flower" },
+  { nombre: "Girasol enano", categoria: "Exterior", descripcion: "Versión compacta del girasol clásico, ideal para macetas y espacios pequeños con mucho sol.", precio: 7.50, imagen: "https://loremflickr.com/800/600/dwarf,sunflower" },
+  { nombre: "Gazania", categoria: "Floral", descripcion: "Flores de colores intensos que se abren con el sol, resistentes a la sequía.", precio: 5.50, imagen: "https://loremflickr.com/800/600/gazania,flower" },
+  { nombre: "Petunias", categoria: "Floral", descripcion: "Flores abundantes y coloridas, perfectas para colgantes, macetas y jardineras.", precio: 5.00, imagen: "https://loremflickr.com/800/600/petunia,flower" },
+  { nombre: "Cactus Nopal de la Cochinilla (Opuntia cochenillifera)", categoria: "Suculentas", descripcion: "Cactus ornamental de pencas planas, resistente y de bajo mantenimiento, ideal para jardines secos.", precio: 9.00, imagen: "https://loremflickr.com/800/600/opuntia,cactus" }
 ];
 
-const CLAVE_LOCALSTORAGE = "raicesPanama_plantas";
-const CLAVE_TEXTOS = "raicesPanama_textos";
-const CLAVE_ADMIN = "vivero2026"; // contraseña básica del panel (solo front-end)
-
-/* ---------- Textos editables del sitio (Inicio, Nosotros, Contacto) ---------- */
 const TEXTOS_INICIALES = {
   heroEyebrow: "Vivero · Ciudad de Panamá",
   heroTitulo: "Plantas que transforman cada rincón en un jardín tropical",
@@ -1014,26 +1028,74 @@ const TEXTOS_INICIALES = {
   contactoSubtitulo: "Escríbenos para cotizaciones a nuestro WhatsApp o correo electrónico."
 };
 
-function obtenerTextos(){
-  const datos = localStorage.getItem(CLAVE_TEXTOS);
-  if(!datos){
-    localStorage.setItem(CLAVE_TEXTOS, JSON.stringify(TEXTOS_INICIALES));
-    return TEXTOS_INICIALES;
-  }
+const CONTACTO_INICIAL = {
+  ubicacion: "Ciudad de Panamá, Panamá",
+  telefono: "+507 6410-8121",
+  whatsapp: "50764108121",
+  email: "vivierohaidepty@gmail.com",
+  horario: "Los fines de semana"
+};
+
+/* ---------- Estado en memoria (se llena con los listeners en tiempo real) ---------- */
+let plantasCache = [];
+let textosCache = { ...TEXTOS_INICIALES };
+let contactoCache = { ...CONTACTO_INICIAL };
+let categoriaActual = "todas";
+
+/* ---------- Sembrar datos iniciales si Firestore está vacío (solo corre una vez) ---------- */
+async function sembrarDatosIniciales(){
   try{
-    return { ...TEXTOS_INICIALES, ...JSON.parse(datos) };
-  }catch(e){
-    return TEXTOS_INICIALES;
-  }
+    const snap = await REF_PLANTAS.limitToFirst(1).once("value");
+    if(!snap.exists()){
+      const actualizaciones = {};
+      PLANTAS_INICIALES.forEach(p => {
+        const nuevaRef = REF_PLANTAS.push();
+        actualizaciones[nuevaRef.key] = p;
+      });
+      await REF_PLANTAS.update(actualizaciones);
+    }
+  }catch(e){ console.error("No se pudo sembrar el catálogo:", e); }
+
+  try{
+    const textosSnap = await REF_TEXTOS.once("value");
+    if(!textosSnap.exists()){ await REF_TEXTOS.set(TEXTOS_INICIALES); }
+  }catch(e){ console.error("No se pudieron sembrar los textos:", e); }
+
+  try{
+    const contactoSnap = await REF_CONTACTO.once("value");
+    if(!contactoSnap.exists()){ await REF_CONTACTO.set(CONTACTO_INICIAL); }
+  }catch(e){ console.error("No se pudo sembrar el contacto:", e); }
 }
 
-function guardarTextos(textos){
-  localStorage.setItem(CLAVE_TEXTOS, JSON.stringify(textos));
+/* ---------- Listeners en tiempo real ---------- */
+function iniciarListenersFirebase(){
+  REF_PLANTAS.on("value", (snap) => {
+    const datos = snap.val() || {};
+    plantasCache = Object.keys(datos).map(id => ({ id, ...datos[id] }));
+    renderCatalogo();
+    if(panelAdmin.classList.contains("activo")) renderListaAdmin();
+  }, (err) => console.error("Error escuchando catálogo:", err));
+
+  REF_TEXTOS.on("value", (snap) => {
+    if(snap.exists()){
+      textosCache = { ...TEXTOS_INICIALES, ...snap.val() };
+      aplicarTextos();
+      if(panelAdmin.classList.contains("activo")) cargarTextosEnFormulario();
+    }
+  }, (err) => console.error("Error escuchando textos:", err));
+
+  REF_CONTACTO.on("value", (snap) => {
+    if(snap.exists()){
+      contactoCache = { ...CONTACTO_INICIAL, ...snap.val() };
+      aplicarContacto();
+      if(panelAdmin.classList.contains("activo")) cargarContactoEnFormulario();
+    }
+  }, (err) => console.error("Error escuchando contacto:", err));
 }
 
-/* Aplica los textos guardados al sitio público */
+/* ---------- Aplicar textos al sitio público ---------- */
 function aplicarTextos(){
-  const t = obtenerTextos();
+  const t = textosCache;
   document.getElementById("texto-hero-eyebrow").textContent = t.heroEyebrow;
   document.getElementById("texto-hero-titulo").textContent = t.heroTitulo;
   document.getElementById("texto-hero-subtitulo").textContent = t.heroSubtitulo;
@@ -1045,9 +1107,8 @@ function aplicarTextos(){
   document.getElementById("texto-contacto-subtitulo").textContent = t.contactoSubtitulo;
 }
 
-/* Carga los textos guardados dentro de los campos del panel admin */
 function cargarTextosEnFormulario(){
-  const t = obtenerTextos();
+  const t = textosCache;
   document.getElementById("edit-hero-eyebrow").value = t.heroEyebrow;
   document.getElementById("edit-hero-titulo").value = t.heroTitulo;
   document.getElementById("edit-hero-subtitulo").value = t.heroSubtitulo;
@@ -1059,42 +1120,45 @@ function cargarTextosEnFormulario(){
   document.getElementById("edit-contacto-subtitulo").value = t.contactoSubtitulo;
 }
 
-/* ---------- Utilidades de almacenamiento ---------- */
-function obtenerPlantas(){
-  const datos = localStorage.getItem(CLAVE_LOCALSTORAGE);
-  if(!datos){
-    localStorage.setItem(CLAVE_LOCALSTORAGE, JSON.stringify(PLANTAS_INICIALES));
-    return PLANTAS_INICIALES;
-  }
-  try{
-    return JSON.parse(datos);
-  }catch(e){
-    return PLANTAS_INICIALES;
+/* ---------- Aplicar datos de contacto al sitio público ---------- */
+function aplicarContacto(){
+  const c = contactoCache;
+  document.getElementById("texto-contacto-ubicacion").textContent = c.ubicacion;
+  document.getElementById("texto-contacto-telefono").textContent = c.telefono;
+  document.getElementById("texto-contacto-correo").textContent = c.email;
+  document.getElementById("texto-contacto-horario").textContent = c.horario;
+
+  // Botón flotante de WhatsApp
+  const flotante = document.querySelector(".whatsapp-flotante");
+  if(flotante){ flotante.href = `https://wa.me/${c.whatsapp}`; }
+
+  // Botón "Escríbenos por WhatsApp" del hero
+  const heroWhatsapp = document.querySelector(".hero-botones a.btn-primario");
+  if(heroWhatsapp){
+    heroWhatsapp.href = `https://wa.me/${c.whatsapp}?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20sus%20plantas`;
   }
 }
 
-function guardarPlantas(plantas){
-  localStorage.setItem(CLAVE_LOCALSTORAGE, JSON.stringify(plantas));
+function cargarContactoEnFormulario(){
+  const c = contactoCache;
+  document.getElementById("edit-contacto-ubicacion").value = c.ubicacion;
+  document.getElementById("edit-contacto-telefono").value = c.telefono;
+  document.getElementById("edit-contacto-whatsapp").value = c.whatsapp;
+  document.getElementById("edit-contacto-email").value = c.email;
+  document.getElementById("edit-contacto-horario").value = c.horario;
 }
 
 /* ---------- Render del catálogo público ---------- */
-let categoriaActual = "todas";
-
 function renderCatalogo(){
-  const plantas = obtenerPlantas();
   const grid = document.getElementById("grid-plantas");
   const sinResultados = document.getElementById("sin-resultados");
   grid.innerHTML = "";
 
   const filtradas = categoriaActual === "todas"
-    ? plantas
-    : plantas.filter(p => p.categoria === categoriaActual);
+    ? plantasCache
+    : plantasCache.filter(p => p.categoria === categoriaActual);
 
-  if(filtradas.length === 0){
-    sinResultados.style.display = "block";
-  } else {
-    sinResultados.style.display = "none";
-  }
+  sinResultados.style.display = filtradas.length === 0 ? "block" : "none";
 
   filtradas.forEach(planta => {
     const tarjeta = document.createElement("div");
@@ -1109,7 +1173,7 @@ function renderCatalogo(){
         <p class="desc">${planta.descripcion}</p>
         <div class="tarjeta-footer">
           <span class="precio">$${Number(planta.precio).toFixed(2)}</span>
-          <button class="btn-mini" onclick="consultarPlanta('${planta.nombre}')">Consultar</button>
+          <button class="btn-mini" onclick="consultarPlanta('${planta.nombre.replace(/'/g,"\\'")}')">Consultar</button>
         </div>
       </div>
     `;
@@ -1122,13 +1186,13 @@ function renderCatalogo(){
 /* Botón "Consultar" envía directo a WhatsApp con el nombre de la planta */
 function consultarPlanta(nombre){
   const texto = encodeURIComponent(`Hola, me interesa la planta "${nombre}". ¿Podrían darme más información?`);
-  window.open(`https://wa.me/50764108121?text=${texto}`, "_blank");
+  window.open(`https://wa.me/${contactoCache.whatsapp}?text=${texto}`, "_blank");
 }
 
 /* ---------- Filtros de catálogo ---------- */
-document.querySelectorAll(".filtro-btn").forEach(btn => {
+document.querySelectorAll(".filtro-btn[data-categoria]").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".filtro-btn").forEach(b => b.classList.remove("activo"));
+    document.querySelectorAll(".filtro-btn[data-categoria]").forEach(b => b.classList.remove("activo"));
     btn.classList.add("activo");
     categoriaActual = btn.dataset.categoria;
     renderCatalogo();
@@ -1170,10 +1234,8 @@ document.getElementById("btn-whatsapp").addEventListener("click", () => {
     return;
   }
 
-  const texto = encodeURIComponent(
-    `Hola, soy ${nombre} (${correo}).\n\n${mensaje}`
-  );
-  window.open(`https://wa.me/50764108121?text=${texto}`, "_blank");
+  const texto = encodeURIComponent(`Hola, soy ${nombre} (${correo}).\n\n${mensaje}`);
+  window.open(`https://wa.me/${contactoCache.whatsapp}?text=${texto}`, "_blank");
 });
 
 document.getElementById("btn-correo").addEventListener("click", () => {
@@ -1188,18 +1250,20 @@ document.getElementById("btn-correo").addEventListener("click", () => {
 
   const asunto = encodeURIComponent("Consulta desde el sitio web - Vivero Haide");
   const cuerpo = encodeURIComponent(`Nombre: ${nombre}\nCorreo: ${correo}\n\nMensaje:\n${mensaje}`);
-  window.location.href = `mailto:vivierohaidepty@gmail.com?subject=${asunto}&body=${cuerpo}`;
+  window.location.href = `mailto:${contactoCache.email}?subject=${asunto}&body=${cuerpo}`;
 });
 
 /* =========================================================
    PANEL ADMINISTRADOR
 ========================================================= */
+const auth = firebase.auth();
 const modalLogin = document.getElementById("modal-login");
 const panelAdmin = document.getElementById("panel-admin");
 const sitioPublico = document.getElementById("sitio-publico");
 
 document.getElementById("link-admin").addEventListener("click", () => {
   modalLogin.classList.add("activo");
+  document.getElementById("correo-admin").value = "";
   document.getElementById("clave-admin").value = "";
   document.getElementById("error-login").style.display = "none";
 });
@@ -1212,14 +1276,37 @@ document.getElementById("btn-confirmar-login").addEventListener("click", validar
 document.getElementById("clave-admin").addEventListener("keyup", (e) => {
   if(e.key === "Enter") validarLogin();
 });
+document.getElementById("correo-admin").addEventListener("keyup", (e) => {
+  if(e.key === "Enter") validarLogin();
+});
 
-function validarLogin(){
+async function validarLogin(){
+  const correo = document.getElementById("correo-admin").value.trim();
   const clave = document.getElementById("clave-admin").value;
-  if(clave === CLAVE_ADMIN){
+  const boton = document.getElementById("btn-confirmar-login");
+  const errorLogin = document.getElementById("error-login");
+  errorLogin.style.display = "none";
+
+  if(!correo || !clave){
+    errorLogin.textContent = "Ingresa tu correo y contraseña.";
+    errorLogin.style.display = "block";
+    return;
+  }
+
+  boton.disabled = true;
+  boton.textContent = "Ingresando...";
+
+  try{
+    await auth.signInWithEmailAndPassword(correo, clave);
     modalLogin.classList.remove("activo");
     abrirPanelAdmin();
-  } else {
-    document.getElementById("error-login").style.display = "block";
+  }catch(e){
+    console.error(e);
+    errorLogin.textContent = "Correo o contraseña incorrectos. Intenta de nuevo.";
+    errorLogin.style.display = "block";
+  }finally{
+    boton.disabled = false;
+    boton.textContent = "Ingresar";
   }
 }
 
@@ -1229,11 +1316,15 @@ function abrirPanelAdmin(){
   document.querySelector(".whatsapp-flotante").style.display = "none";
   panelAdmin.classList.add("activo");
   renderListaAdmin();
+  cargarContactoEnFormulario();
   window.scrollTo(0,0);
 }
 
 document.getElementById("btn-volver-sitio").addEventListener("click", cerrarPanelAdmin);
-document.getElementById("btn-cerrar-sesion").addEventListener("click", cerrarPanelAdmin);
+document.getElementById("btn-cerrar-sesion").addEventListener("click", () => {
+  auth.signOut();
+  cerrarPanelAdmin();
+});
 
 function cerrarPanelAdmin(){
   sitioPublico.style.display = "block";
@@ -1244,70 +1335,174 @@ function cerrarPanelAdmin(){
   window.scrollTo(0,0);
 }
 
+/* Si la sesión expira o se cierra desde otra pestaña, regresamos al sitio público */
+auth.onAuthStateChanged((usuario) => {
+  if(!usuario && panelAdmin.classList.contains("activo")){
+    cerrarPanelAdmin();
+  }
+});
+
 /* ---------- Vista previa de imagen subida ---------- */
-let imagenSeleccionada = null;
+let archivoSeleccionado = null;
+
+/* Comprime y convierte la imagen a base64 (máx. 900px de ancho/alto, calidad 0.7)
+   para que pese poco y no sature la cuota gratuita de Realtime Database */
+function comprimirImagen(archivo, maxLado = 900, calidad = 0.7){
+  return new Promise((resolve, reject) => {
+    const lector = new FileReader();
+    lector.onerror = () => reject(new Error("No se pudo leer el archivo"));
+    lector.onload = (evento) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("No se pudo procesar la imagen"));
+      img.onload = () => {
+        let { width, height } = img;
+        if(width > maxLado || height > maxLado){
+          if(width > height){
+            height = Math.round(height * (maxLado / width));
+            width = maxLado;
+          } else {
+            width = Math.round(width * (maxLado / height));
+            height = maxLado;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", calidad));
+      };
+      img.src = evento.target.result;
+    };
+    lector.readAsDataURL(archivo);
+  });
+}
 
 document.getElementById("admin-imagen").addEventListener("change", (e) => {
   const archivo = e.target.files[0];
   if(!archivo) return;
+  archivoSeleccionado = archivo;
 
   const lector = new FileReader();
   lector.onload = (evento) => {
-    imagenSeleccionada = evento.target.result; // base64
     document.getElementById("preview-imagen").innerHTML =
-      `<img src="${imagenSeleccionada}" alt="Vista previa">`;
+      `<img src="${evento.target.result}" alt="Vista previa">`;
   };
   lector.readAsDataURL(archivo);
 });
 
-/* ---------- Agregar nueva planta al catálogo ---------- */
-document.getElementById("btn-agregar-planta").addEventListener("click", () => {
+/* Si el usuario pega una URL, se muestra como vista previa también */
+document.getElementById("admin-imagen-url").addEventListener("input", (e) => {
+  const url = e.target.value.trim();
+  if(url){
+    archivoSeleccionado = null;
+    document.getElementById("admin-imagen").value = "";
+    document.getElementById("preview-imagen").innerHTML = `<img src="${url}" alt="Vista previa">`;
+  }
+});
+
+/* ---------- Agregar o actualizar planta del catálogo ---------- */
+document.getElementById("btn-agregar-planta").addEventListener("click", async () => {
+  const idEdicion = document.getElementById("admin-planta-id").value;
   const nombre = document.getElementById("admin-nombre").value.trim();
   const categoria = document.getElementById("admin-categoria").value;
   const descripcion = document.getElementById("admin-descripcion").value.trim();
   const precio = parseFloat(document.getElementById("admin-precio").value);
+  const urlImagen = document.getElementById("admin-imagen-url").value.trim();
 
   if(!nombre || !descripcion || isNaN(precio)){
     alert("Por favor completa nombre, descripción y precio.");
     return;
   }
 
-  const nuevaPlanta = {
-    id: "p" + Date.now(),
-    nombre,
-    categoria,
-    descripcion,
-    precio,
-    imagen: imagenSeleccionada || "https://images.unsplash.com/photo-1463936575829-25148e1db1b8?q=80&w=800&auto=format&fit=crop"
-  };
+  const boton = document.getElementById("btn-agregar-planta");
+  boton.disabled = true;
 
-  const plantas = obtenerPlantas();
-  plantas.push(nuevaPlanta);
-  guardarPlantas(plantas);
+  try{
+    let imagenFinal = urlImagen || null;
 
-  // limpiar formulario
+    if(archivoSeleccionado){
+      document.getElementById("subiendo-imagen").textContent = "Procesando imagen...";
+      document.getElementById("subiendo-imagen").style.display = "block";
+      try{
+        imagenFinal = await comprimirImagen(archivoSeleccionado);
+      }catch(errImg){
+        console.error("Error procesando imagen:", errImg);
+        document.getElementById("subiendo-imagen").style.display = "none";
+        alert("No se pudo procesar la imagen. Intenta con otra foto o usa el campo de URL.");
+        boton.disabled = false;
+        return;
+      }
+      document.getElementById("subiendo-imagen").style.display = "none";
+    }
+
+    const datosPlanta = {
+      nombre, categoria, descripcion, precio,
+      imagen: imagenFinal || "https://images.unsplash.com/photo-1463936575829-25148e1db1b8?q=80&w=800&auto=format&fit=crop"
+    };
+
+    if(idEdicion){
+      await REF_PLANTAS.child(idEdicion).update(datosPlanta);
+    } else {
+      await REF_PLANTAS.push(datosPlanta);
+    }
+
+    cancelarEdicionPlanta();
+  }catch(e){
+    console.error(e);
+    alert("Ocurrió un error guardando la planta. Revisa tu conexión o configuración de Firebase.");
+  }finally{
+    boton.disabled = false;
+  }
+});
+
+function cancelarEdicionPlanta(){
+  document.getElementById("admin-planta-id").value = "";
   document.getElementById("admin-nombre").value = "";
   document.getElementById("admin-descripcion").value = "";
   document.getElementById("admin-precio").value = "";
   document.getElementById("admin-imagen").value = "";
+  document.getElementById("admin-imagen-url").value = "";
+  document.getElementById("admin-categoria").value = "Interior";
   document.getElementById("preview-imagen").innerHTML = "Vista previa de la imagen";
-  imagenSeleccionada = null;
+  document.getElementById("titulo-form-planta").textContent = "Agregar nueva planta";
+  document.getElementById("btn-agregar-planta").textContent = "+ Agregar al catálogo";
+  document.getElementById("btn-cancelar-edicion").style.display = "none";
+  archivoSeleccionado = null;
+}
 
-  renderListaAdmin();
-});
+document.getElementById("btn-cancelar-edicion").addEventListener("click", cancelarEdicionPlanta);
+
+function editarPlanta(id){
+  const planta = plantasCache.find(p => p.id === id);
+  if(!planta) return;
+
+  document.getElementById("admin-planta-id").value = planta.id;
+  document.getElementById("admin-nombre").value = planta.nombre;
+  document.getElementById("admin-categoria").value = planta.categoria;
+  document.getElementById("admin-descripcion").value = planta.descripcion;
+  document.getElementById("admin-precio").value = planta.precio;
+  document.getElementById("admin-imagen-url").value = planta.imagen || "";
+  document.getElementById("admin-imagen").value = "";
+  document.getElementById("preview-imagen").innerHTML = planta.imagen ? `<img src="${planta.imagen}" alt="Vista previa">` : "Vista previa de la imagen";
+  document.getElementById("titulo-form-planta").textContent = "Editar planta";
+  document.getElementById("btn-agregar-planta").textContent = "💾 Guardar cambios";
+  document.getElementById("btn-cancelar-edicion").style.display = "inline-flex";
+  archivoSeleccionado = null;
+
+  document.getElementById("vista-plantas").scrollIntoView({ behavior: "smooth" });
+}
 
 /* ---------- Lista de plantas en el panel admin ---------- */
 function renderListaAdmin(){
-  const plantas = obtenerPlantas();
   const lista = document.getElementById("lista-admin");
   lista.innerHTML = "";
 
-  if(plantas.length === 0){
+  if(plantasCache.length === 0){
     lista.innerHTML = `<p style="color:var(--texto-suave);">Aún no hay plantas registradas.</p>`;
     return;
   }
 
-  plantas.forEach(planta => {
+  plantasCache.forEach(planta => {
     const fila = document.createElement("div");
     fila.className = "fila-admin";
     fila.innerHTML = `
@@ -1317,38 +1512,46 @@ function renderListaAdmin(){
         <span>${planta.categoria} · ${planta.descripcion.substring(0,60)}${planta.descripcion.length > 60 ? "…" : ""}</span>
       </div>
       <span class="precio-admin">$${Number(planta.precio).toFixed(2)}</span>
-      <button class="btn-eliminar" onclick="eliminarPlanta('${planta.id}')">Eliminar</button>
+      <div>
+        <button class="btn-editar" onclick="editarPlanta('${planta.id}')">Editar</button>
+        <button class="btn-eliminar" onclick="eliminarPlanta('${planta.id}')">Eliminar</button>
+      </div>
     `;
     lista.appendChild(fila);
   });
 }
 
-function eliminarPlanta(id){
+async function eliminarPlanta(id){
   if(!confirm("¿Eliminar esta planta del catálogo?")) return;
-  let plantas = obtenerPlantas();
-  plantas = plantas.filter(p => p.id !== id);
-  guardarPlantas(plantas);
-  renderListaAdmin();
+  try{
+    await REF_PLANTAS.child(id).remove();
+  }catch(e){
+    console.error(e);
+    alert("No se pudo eliminar la planta. Revisa tu conexión.");
+  }
 }
 
 /* ---------- Pestañas del panel admin ---------- */
-document.getElementById("tab-plantas").addEventListener("click", () => {
-  document.getElementById("tab-plantas").classList.add("activo");
-  document.getElementById("tab-textos").classList.remove("activo");
-  document.getElementById("vista-plantas").style.display = "block";
-  document.getElementById("vista-textos").style.display = "none";
-});
+function activarPestana(idActiva){
+  ["tab-plantas","tab-textos","tab-contacto"].forEach(id => document.getElementById(id).classList.remove("activo"));
+  ["vista-plantas","vista-textos","vista-contacto"].forEach(id => document.getElementById(id).style.display = "none");
+  document.getElementById(idActiva).classList.add("activo");
+  const vista = idActiva.replace("tab-", "vista-");
+  document.getElementById(vista).style.display = "block";
+}
 
+document.getElementById("tab-plantas").addEventListener("click", () => activarPestana("tab-plantas"));
 document.getElementById("tab-textos").addEventListener("click", () => {
-  document.getElementById("tab-textos").classList.add("activo");
-  document.getElementById("tab-plantas").classList.remove("activo");
-  document.getElementById("vista-textos").style.display = "block";
-  document.getElementById("vista-plantas").style.display = "none";
+  activarPestana("tab-textos");
   cargarTextosEnFormulario();
+});
+document.getElementById("tab-contacto").addEventListener("click", () => {
+  activarPestana("tab-contacto");
+  cargarContactoEnFormulario();
 });
 
 /* ---------- Guardar textos editados ---------- */
-document.getElementById("btn-guardar-textos").addEventListener("click", () => {
+document.getElementById("btn-guardar-textos").addEventListener("click", async () => {
   const nuevosTextos = {
     heroEyebrow: document.getElementById("edit-hero-eyebrow").value.trim(),
     heroTitulo: document.getElementById("edit-hero-titulo").value.trim(),
@@ -1361,18 +1564,42 @@ document.getElementById("btn-guardar-textos").addEventListener("click", () => {
     contactoSubtitulo: document.getElementById("edit-contacto-subtitulo").value.trim()
   };
 
-  guardarTextos(nuevosTextos);
-  aplicarTextos();
+  try{
+    await REF_TEXTOS.update(nuevosTextos);
+    const confirmacion = document.getElementById("confirmacion-textos");
+    confirmacion.style.display = "block";
+    setTimeout(() => { confirmacion.style.display = "none"; }, 2500);
+  }catch(e){
+    console.error(e);
+    alert("No se pudieron guardar los textos. Revisa tu conexión.");
+  }
+});
 
-  const confirmacion = document.getElementById("confirmacion-textos");
-  confirmacion.style.display = "block";
-  setTimeout(() => { confirmacion.style.display = "none"; }, 2500);
+/* ---------- Guardar datos de contacto editados ---------- */
+document.getElementById("btn-guardar-contacto").addEventListener("click", async () => {
+  const nuevoContacto = {
+    ubicacion: document.getElementById("edit-contacto-ubicacion").value.trim(),
+    telefono: document.getElementById("edit-contacto-telefono").value.trim(),
+    whatsapp: document.getElementById("edit-contacto-whatsapp").value.trim().replace(/[^0-9]/g, ""),
+    email: document.getElementById("edit-contacto-email").value.trim(),
+    horario: document.getElementById("edit-contacto-horario").value.trim()
+  };
+
+  try{
+    await REF_CONTACTO.update(nuevoContacto);
+    const confirmacion = document.getElementById("confirmacion-contacto");
+    confirmacion.style.display = "block";
+    setTimeout(() => { confirmacion.style.display = "none"; }, 2500);
+  }catch(e){
+    console.error(e);
+    alert("No se pudo guardar el contacto. Revisa tu conexión.");
+  }
 });
 
 /* ---------- Inicialización ---------- */
-document.addEventListener("DOMContentLoaded", () => {
-  aplicarTextos();
-  renderCatalogo();
+document.addEventListener("DOMContentLoaded", async () => {
+  await sembrarDatosIniciales();
+  iniciarListenersFirebase();
   observarFadeUp();
 });
 </script>
