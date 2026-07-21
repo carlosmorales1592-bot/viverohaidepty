@@ -969,7 +969,8 @@ footer{
     </div>
   </div>
   <div class="footer-bottom">
-    <p>© 2026 Vivero Haide · Hecho con 🌿 en Ciudad de Panamá · <span class="link-admin" id="link-admin">Acceso administrador</span></p>
+    <p>© 2026 Vivero Haide · Hecho con 🌿 en Ciudad de Panamá</p>
+    <span class="link-admin" id="link-admin" style="display:none;" aria-hidden="true"></span>
   </div>
 </footer>
 
@@ -1261,12 +1262,42 @@ const modalLogin = document.getElementById("modal-login");
 const panelAdmin = document.getElementById("panel-admin");
 const sitioPublico = document.getElementById("sitio-publico");
 
-document.getElementById("link-admin").addEventListener("click", () => {
+function abrirModalLoginAdmin() {
   modalLogin.classList.add("activo");
   document.getElementById("correo-admin").value = "";
   document.getElementById("clave-admin").value = "";
   document.getElementById("error-login").style.display = "none";
-});
+}
+
+/* Acceso administrador oculto: se activa escribiendo la secuencia C, Y, E
+   en cualquier parte del sitio (sin necesidad de un botón visible). */
+(function () {
+  const secuenciaSecreta = ["c", "y", "e"];
+  let progreso = 0;
+  let ultimoTecleo = 0;
+
+  document.addEventListener("keydown", (e) => {
+    // Ignorar si el usuario está escribiendo en un campo de texto
+    const activo = document.activeElement;
+    const escribiendo = activo && (activo.tagName === "INPUT" || activo.tagName === "TEXTAREA" || activo.isContentEditable);
+    if (escribiendo) return;
+
+    const ahora = Date.now();
+    if (ahora - ultimoTecleo > 2000) progreso = 0; // reinicia si tardó demasiado
+    ultimoTecleo = ahora;
+
+    const tecla = e.key.toLowerCase();
+    if (tecla === secuenciaSecreta[progreso]) {
+      progreso++;
+      if (progreso === secuenciaSecreta.length) {
+        progreso = 0;
+        abrirModalLoginAdmin();
+      }
+    } else {
+      progreso = (tecla === secuenciaSecreta[0]) ? 1 : 0;
+    }
+  });
+})();
 
 document.getElementById("cerrar-modal-login").addEventListener("click", () => {
   modalLogin.classList.remove("activo");
